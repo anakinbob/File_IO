@@ -1,8 +1,6 @@
 
 import java.io.*;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.List;
+import java.util.*;
 
 /**
  * Created by cherryzard on 2/1/2016.
@@ -10,16 +8,26 @@ import java.util.List;
 
 public class FileIO {
     private static final String ROOT = "D:\\Workspace\\test";
+    private static int patternCount = 0;
     public static void main(String[] args) {
-        writeCompressed(new File(ROOT,"test.txt"),new File(ROOT,"test2.compr"));
+        writeCompressed(new File(ROOT, "test.txt"), new File(ROOT, "test2.compr"));
+//        HashMap<Integer,Set<Integer>> testMap = new HashMap<>();
+//        Set<Integer> set = new HashSet<>();
+//        set.add(1);
+//        set.add(2);
+//        set.add(3);
+//        testMap.put(0,set);
+//        printSet(testMap.get(0));
+//        Set<Integer> get = testMap.get(0);
+//        get.add(4);
+//        printSet(testMap.get(0));
     }
 
-    public static void test() {
-        boolean test = (Integer.class.equals(int.class));
-        System.out.printf(""+test);
-
+    private static void printSet(Set<Integer> set) {
+        for(int i : set) {
+            System.out.print(i + ",");
+        } System.out.print("\n");
     }
-
 
 
     private static void copyPaste(File inputPath, File outputPath) {
@@ -70,21 +78,110 @@ public class FileIO {
     /**
      * spec for compression:
      *
-     * first byte of file is used to signify the start of a pattern
-     * second byte of file is the number used to signify of the pattern is used else in the file
-     * third byte of file is used to signify the start of a reference
+     * first byte of file is used to signify the start and end of a pattern(patByte)
+     * second byte of file is used to signify the start of a reference(refByte)
+     * third byte is the number of bytes used to signify a pattern (numPatByte)
      * next is any number of either of the following:
-     *      byte signifying start of a pattern
-     *      byte signifying whether pattern is used
-     *      some sequence of bytes
-     * OR
-     *      byte signifying a reference
-     *      2 bytes indicating the index of the pattern
      *
-     * @param array
-     * @return
+     *      patByte
+     *      some sequence of bytes
+     *      patByte
+     *
+     *      refByte
+     *      an index for the pattern reference (the number of bytes will be equal to numPatByte)
+     *
+     *      some sequence of bytes
+     *
      */
     private static byte[] getCompressed(byte[] array) {
+
+        int[] usedBytes = new int[256];
+        for(byte b: array) {
+            usedBytes[(int)b + 128] = 1;
+        }
+        int minPatternSize = 5;
+        List<Pattern> patternList = new ArrayList<>();
+        Byte patByte = null;
+        Byte refByte = null;
+        Byte numPatByte = null;
+        HashMap<Byte,Set<Integer>> byteIndexes = new HashMap<>();
+        for(int i = 0; i < usedBytes.length; i++) {
+            if(usedBytes[i] == 0) {
+                if(patByte == null) {
+                    patByte = (byte)(i - 128);
+                } else {
+                    refByte = (byte)(i - 128);
+                }
+            }
+        }
+        ArrayList<Byte> compressed = new ArrayList<>();
+        compressed.add(patByte);
+        compressed.add(refByte);
+        compressed.add((byte)0); //placeholder to be replaced later with the actual byte count data
+        for(int i = 0; i < array.length; i++) {
+            byte b = array[i];
+            Set<Integer> indexList = byteIndexes.get(b);
+            if(indexList == null) {
+                indexList = new LinkedHashSet<>();
+                indexList.add(i);
+                byteIndexes.put(b,indexList);
+            }
+            else {
+                Set<Integer> copySet = new LinkedHashSet<>(indexList);
+                indexList.add(i);
+                Pattern bigPatternData = getBiggestPattern(copySet,array,i,patternList);
+                if(bigPatternData.pattern.size() >= minPatternSize) {
+                    patternList.add(bigPatternData);
+
+                }
+            }
+        }
+        byte[] compressedArray = new byte[compressed.size()];
+        for(int i = 0; i < compressed.size(); i++) {
+            compressedArray[i] = compressed.get(i);
+        }
+        return compressedArray;
+    }
+
+    private static Pattern getBiggestPattern(Set<Integer> indexList, byte[] array, int check, List<Pattern> patterns) {
+        Pattern biggestPattern = new Pattern(Collections.emptyList(),-1);
+        for(int index: indexList) {
+            Pattern pattern = matchPattern(array,check,index);
+            if(pattern.pattern.size() > biggestPattern.pattern.size()) {
+                biggestPattern = pattern;
+            }
+        }
+        for(Pattern pattern : patterns) {
+            if(matchPattern(array,check,pattern)) {
+                return pattern;
+            }
+        }
+        return biggestPattern;
+    }
+
+    private static Pattern matchPattern(byte[] array, int check, int pattern) {
+        List<Byte> match = new ArrayList<>();
+        for(int i = 0 ; array[pattern + i] == array[check + i] ; i++) { //TODO index out of bounds
+            match.add(array[check +i]);
+        }
+            patternCount++;
+            return new Pattern(match,patternCount - 1);
+    }
+
+    private static boolean matchPattern(byte[] array, int check, Pattern pattern) {
+        for(int i = 0 ; pattern.pattern.get(i) == array[check + i] ; i++) { //TODO index out of bounds
+            if(i == pattern.pattern.size() - 1) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * spec for compression:
+     *
+     */
+    private static byte[] getCompressed2(byte[] array) {
 
         int[] usedBytes = new int[127+128+1];
         for(byte b: array) {
