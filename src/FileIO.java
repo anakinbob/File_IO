@@ -10,7 +10,10 @@ public class FileIO {
     private static final String ROOT = "D:\\Workspace\\test";
     private static int patternCount = 0;
     public static void main(String[] args) {
-        writeCompressed(new File(ROOT, "test.txt"), new File(ROOT, "test2.compr"));
+//        writeCompressed(new File(ROOT, "test.txt"), new File(ROOT, "test2.compr"));
+        byte[] data = {2, 3,4,5,6,7,8,9,1,2,3,4,2,5,6,4,7,4,5,8,9};
+        byte[] compr = getCompressed(data);
+        System.out.print(compr.toString());
 //        HashMap<Integer,Set<Integer>> testMap = new HashMap<>();
 //        Set<Integer> set = new HashSet<>();
 //        set.add(1);
@@ -99,8 +102,8 @@ public class FileIO {
         for(byte b: array) {
             usedBytes[(int)b + 128] = 1;
         }
-        int minPatternSize = 5;
-        List<Pattern> patternList = new ArrayList<>();
+        int minPatternSize = 3;
+        LinkedHashSet<Pattern> patternList = new LinkedHashSet<>();
         Byte patByte = null;
         Byte refByte = null;
         Byte numPatByte = null;
@@ -111,6 +114,7 @@ public class FileIO {
                     patByte = (byte)(i - 128);
                 } else {
                     refByte = (byte)(i - 128);
+                    break;
                 }
             }
         }
@@ -131,7 +135,16 @@ public class FileIO {
                 indexList.add(i);
                 Pattern bigPatternData = getBiggestPattern(copySet,array,i,patternList);
                 if(bigPatternData.pattern.size() >= minPatternSize) {
-                    patternList.add(bigPatternData);
+                    if(patternList.contains(bigPatternData)) {
+                        // reuse of old pattern
+                    } else if(isPartOfPattern(bigPatternData,patternList)) {
+                        // dont use pattern
+                    } else {
+                        // use new pattern
+                        patternList.add(bigPatternData);
+                        i += bigPatternData.pattern.size() - 1;
+
+                    }
 
                 }
             }
@@ -143,8 +156,8 @@ public class FileIO {
         return compressedArray;
     }
 
-    private static Pattern getBiggestPattern(Set<Integer> indexList, byte[] array, int check, List<Pattern> patterns) {
-        Pattern biggestPattern = new Pattern(Collections.emptyList(),-1);
+    private static Pattern getBiggestPattern(Set<Integer> indexList, byte[] array, int check, LinkedHashSet<Pattern> patterns) {
+        Pattern biggestPattern = new Pattern(Collections.emptyList(),-1,-1);
         for(int index: indexList) {
             Pattern pattern = matchPattern(array,check,index);
             if(pattern.pattern.size() > biggestPattern.pattern.size()) {
@@ -161,20 +174,35 @@ public class FileIO {
 
     private static Pattern matchPattern(byte[] array, int check, int pattern) {
         List<Byte> match = new ArrayList<>();
-        for(int i = 0 ; array[pattern + i] == array[check + i] ; i++) { //TODO index out of bounds
+        for(int i = 0 ; check + i < array.length && array[pattern + i] == array[check + i] ; i++) {
             match.add(array[check +i]);
         }
             patternCount++;
-            return new Pattern(match,patternCount - 1);
+            return new Pattern(match,patternCount - 1,pattern);
     }
 
     private static boolean matchPattern(byte[] array, int check, Pattern pattern) {
-        for(int i = 0 ; pattern.pattern.get(i) == array[check + i] ; i++) { //TODO index out of bounds
+        for(int i = 0 ; check + i < array.length && i < pattern.pattern.size() &&
+                pattern.pattern.get(i) == array[check + i] ; i++) {
             if(i == pattern.pattern.size() - 1) {
                 return true;
             }
         }
         return false;
+    }
+
+    private static boolean isPartOfPattern(Pattern pattern, LinkedHashSet<Pattern> patternList) {
+        for(Pattern patternInList : patternList) {
+            if(doPatternsOverlap(patternInList,pattern)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean doPatternsOverlap(Pattern p1, Pattern p2) {
+        return !((p1.arrayIndex < p2.arrayIndex && p1.arrayIndex + p1.pattern.size() <= p2.arrayIndex) ||
+                (p2.arrayIndex < p1.arrayIndex && p2.arrayIndex + p2.pattern.size() <= p1.arrayIndex));
     }
 
     /**

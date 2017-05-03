@@ -12,4 +12,9 @@ public class Pattern {
         this.ref = ref;
         this.arrayIndex = arrayIndex;
     }
+
+    @Override
+    public int hashCode() {
+        return Integer.decode(pattern.hashCode() + "" + ref + "" + arrayIndex);
+    }
 }
