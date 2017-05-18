@@ -7,23 +7,11 @@ import java.util.*;
  */
 
 public class FileIO {
-    private static final String ROOT = "D:\\Workspace\\test";
+    private static final String ROOT = "/Users/ankitbahl/Workspace/test";
     private static int patternCount = 0;
+    private static int overallProgress = 1;
     public static void main(String[] args) {
-//        writeCompressed(new File(ROOT, "test.txt"), new File(ROOT, "test2.compr"));
-        byte[] data = {2, 3,4,5,6,7,8,9,1,2,3,4,2,5,6,4,7,4,5,8,9};
-        byte[] compr = getCompressed(data);
-        System.out.print(compr.toString());
-//        HashMap<Integer,Set<Integer>> testMap = new HashMap<>();
-//        Set<Integer> set = new HashSet<>();
-//        set.add(1);
-//        set.add(2);
-//        set.add(3);
-//        testMap.put(0,set);
-//        printSet(testMap.get(0));
-//        Set<Integer> get = testMap.get(0);
-//        get.add(4);
-//        printSet(testMap.get(0));
+        writeCompressed(new File(ROOT, "test2.mkv"), new File(ROOT, "test2.compr"));
     }
 
     private static void printSet(Set<Integer> set) {
@@ -64,7 +52,7 @@ public class FileIO {
             output = new BufferedOutputStream(new FileOutputStream(outputPath));
             byte[] buffer = new byte[input.available()];
             input.read(buffer);
-            output.write(getCompressed(buffer));
+            output.write(getCompressed(buffer,2));
         } catch( IOException e) {
             e.printStackTrace();
         } finally {
@@ -91,23 +79,22 @@ public class FileIO {
      *      patByte
      *
      *      refByte
-     *      an index for the pattern reference (the number of bytes will be equal to numPatByte)
+     *      a base 256 converted number - 128 for each digit (the number of digits will be equal to numPatByte)
      *
      *      some sequence of bytes
      *
      */
-    private static byte[] getCompressed(byte[] array) {
+    private static byte[] getCompressed(byte[] array, int minPatternSize) {
 
         int[] usedBytes = new int[256];
         for(byte b: array) {
-            usedBytes[(int)b + 128] = 1;
+            usedBytes[(int) b + 128] = 1;
         }
-        int minPatternSize = 3;
-        LinkedHashSet<Pattern> patternList = new LinkedHashSet<>();
+        List<Pattern> patternList = new ArrayList<>();
         Byte patByte = null;
         Byte refByte = null;
-        Byte numPatByte = null;
         HashMap<Byte,Set<Integer>> byteIndexes = new HashMap<>();
+        List<ReferenceMap> referenceMappings = new ArrayList<>(); //maps index of the start of a reference to the reference it uses
         for(int i = 0; i < usedBytes.length; i++) {
             if(usedBytes[i] == 0) {
                 if(patByte == null) {
@@ -121,8 +108,15 @@ public class FileIO {
         ArrayList<Byte> compressed = new ArrayList<>();
         compressed.add(patByte);
         compressed.add(refByte);
-        compressed.add((byte)0); //placeholder to be replaced later with the actual byte count data
+        int counter = 0;
         for(int i = 0; i < array.length; i++) {
+            if(counter % 100
+
+
+                    == 0) {
+                System.out.println("progress("+ overallProgress +"/9): " + (double)i / array.length);
+            }
+            counter++;
             byte b = array[i];
             Set<Integer> indexList = byteIndexes.get(b);
             if(indexList == null) {
@@ -137,26 +131,80 @@ public class FileIO {
                 if(bigPatternData.pattern.size() >= minPatternSize) {
                     if(patternList.contains(bigPatternData)) {
                         // reuse of old pattern
+                        referenceMappings.add(new ReferenceMap(i,patternList.indexOf(bigPatternData)));
                     } else if(isPartOfPattern(bigPatternData,patternList)) {
                         // dont use pattern
                     } else {
                         // use new pattern
                         patternList.add(bigPatternData);
+                        referenceMappings.add(new ReferenceMap(i,patternList.size() - 1));
                         i += bigPatternData.pattern.size() - 1;
-
                     }
 
                 }
             }
         }
+
+        byte numPatByte = (byte)(Math.ceil(Math.log(patternList.size())/Math.log(255d)));
+        compressed.add(numPatByte);
+        int refCounter = 0;
+        int patCounter = 0;
+        for(int i = 0; i < array.length; ) {
+            int refIndex = refCounter < referenceMappings.size() ? referenceMappings.get(refCounter).refIndex : -1;
+            int patIndex = patCounter < patternList.size() ? patternList.get(patCounter).arrayIndex : -1;
+            if(i == refIndex) {
+                //start of a reference
+                compressed.add(refByte);
+                int patternIndex = referenceMappings.get(refCounter).ref;
+                addIndexToCompressed(patternIndex,numPatByte,compressed);
+                refCounter++;
+                i += patternList.get(patternIndex).pattern.size();
+            } else if(i == patIndex) {
+                //start of a pattern
+                compressed.add(patByte);
+                compressed.addAll(patternList.get(patCounter).pattern);
+                compressed.add(patByte);
+                i += patternList.get(patCounter).pattern.size();
+                patCounter++;
+            } else {
+                //regular bytes
+                compressed.add(array[i]);
+                i++;
+            }
+
+        }
         byte[] compressedArray = new byte[compressed.size()];
         for(int i = 0; i < compressed.size(); i++) {
             compressedArray[i] = compressed.get(i);
         }
+        overallProgress++;
+        if(minPatternSize == 10) {
+            return compressedArray;
+        }
+        byte[] biggerArray = getCompressed(array,minPatternSize + 1);
+        if(biggerArray.length < compressedArray.length) {
+            return biggerArray;
+        }
         return compressedArray;
     }
 
-    private static Pattern getBiggestPattern(Set<Integer> indexList, byte[] array, int check, LinkedHashSet<Pattern> patterns) {
+    private static void addIndexToCompressed(int index, int numIndexes, ArrayList<Byte> compressed) {
+        ArrayList<Integer> base256 = new ArrayList<>();
+        while(index > 0) {
+            base256.add(index % 256);
+            index /= 256;
+        }
+        while (base256.size() < numIndexes) {
+            base256.add(0);
+        }
+
+        for(int i = base256.size() - 1; i >= 0; i--) {
+            compressed.add((byte)(base256.get(i) - 128));
+        }
+
+    }
+
+    private static Pattern getBiggestPattern(Set<Integer> indexList, byte[] array, int check, List<Pattern> patterns) {
         Pattern biggestPattern = new Pattern(Collections.emptyList(),-1,-1);
         for(int index: indexList) {
             Pattern pattern = matchPattern(array,check,index);
@@ -191,7 +239,7 @@ public class FileIO {
         return false;
     }
 
-    private static boolean isPartOfPattern(Pattern pattern, LinkedHashSet<Pattern> patternList) {
+    private static boolean isPartOfPattern(Pattern pattern, List<Pattern> patternList) {
         for(Pattern patternInList : patternList) {
             if(doPatternsOverlap(patternInList,pattern)) {
                 return true;
